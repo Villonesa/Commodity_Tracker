@@ -13,13 +13,32 @@ export default function NewsCard({ news }: NewsCardProps) {
 
   const handleExplain = async () => {
     setIsExplaining(true);
-    
-    // Simular tiempo de respuesta de la API de IA
-    await new Promise(resolve => setTimeout(resolve, 2500));
-    
-    setExplanation('🤖 Explicación IA: En términos sencillos, esta noticia significa que la oferta de esta materia prima se está reduciendo, lo que podría empujar los precios al alza a corto plazo.');
-    
-    setIsExplaining(false);
+
+    try {
+      // Llamada real a nuestra API Route que conecta con Gemini
+      const response = await fetch('/api/explain', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: news.title,
+          summary: news.summary,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`La API respondió con estado ${response.status}`);
+      }
+
+      const data = await response.json();
+      setExplanation(`🤖 ${data.explanation}`);
+    } catch (error) {
+      console.error('Error al solicitar la explicación:', error);
+      setExplanation('Error al generar la explicación');
+    } finally {
+      setIsExplaining(false);
+    }
   };
 
   return (
