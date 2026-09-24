@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+// Fuerza tiempo real estricto: sin caché estático ni revalidación
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // Tipos básicos de la respuesta de Alpha Vantage (NEWS_SENTIMENT)
 interface AVTickerSentiment {
   ticker: string;
@@ -50,6 +54,17 @@ function formatPublishedDate(timePublished?: string): string {
   });
 }
 
+// Importamos el mock data para usarlo como fallback visible cuando la API falle
+async function getMockFallback(reason: string): Promise<NextResponse> {
+  console.warn(`[api/news] Fallback a mock data (${reason})`);
+  const { mockNews } = await import("@/lib/mockData");
+  const simulated = mockNews.map((item) => ({
+    ...item,
+    title: `[LÍMITE API - SIMULACIÓN] ${item.title}`,
+  }));
+  return NextResponse.json(simulated, { status: 200 });
+}
+
 export async function GET() {
   try {
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
@@ -63,23 +78,28 @@ export async function GET() {
 
     const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=energy_minerals,metals&sort=LATEST&limit=6&apikey=${apiKey}`;
 
-    const res = await fetch(url, { next: { revalidate: 900 } }); // cache 15 min
+    // cache: 'no-store' → tiempo real estricto, sin respuestas cacheadas
+    const res = await fetch(url, { cache: "no-store" });
 
     if (!res.ok) {
-      return NextResponse.json(
-        { error: `Alpha Vantage respondió con estado ${res.status}` },
-        { status: 502 }
-      );
+      // Error HTTP → fallback simulado y visible
+      return getMockFallback(`Alpha Vantage respondió con estado ${res.status}`);
     }
 
     const data = await res.json();
+
+    // Alpha Vantage devuelve "Information" o "Note" cuando se excede el límite
+    // del plan gratuito (rate limit), en lugar del array "feed".
+    if (data?.Information || data?.Note) {
+      const message = String(data.Information ?? data.Note);
+      return getMockFallback(`Rate limit de Alpha Vantage: ${message}`);
+    }
+
     const feed: AVFeedItem[] = Array.isArray(data?.feed) ? data.feed : [];
 
     if (feed.length === 0) {
-      return NextResponse.json(
-        { error: "No se recibieron noticias de Alpha Vantage (posible límite de API alcanzado)" },
-        { status: 502 }
-      );
+      // Sin noticias (posible límite de API alcanzado) → fallback simulado y visible
+      return getMockFallback("Alpha Vantage no devolvió noticias en el feed");
     }
 
     const news = feed.slice(0, 6).map((item, index) => ({
@@ -93,9 +113,7 @@ export async function GET() {
 
     return NextResponse.json(news);
   } catch (error) {
-    return NextResponse.json(
-      { error: "Error al consultar Alpha Vantage", details: String(error) },
-      { status: 500 }
-    );
+    // Cualquier otro fallo (red, parseo, etc.) → fallback simulado y visible
+    return getMockFallback(`Error inesperado: ${String(error)}`);
   }
 }
