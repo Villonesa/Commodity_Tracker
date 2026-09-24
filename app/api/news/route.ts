@@ -139,11 +139,11 @@ export async function GET() {
     );
 
     const allItems: { item: TDPressRelease; symbol: string }[] = [];
-    for (const r of results) {
+    results.forEach((r, i) => {
       if (r.status === "fulfilled") {
-        for (const item of r.value) allItems.push({ item, symbol: "" });
+        for (const item of r.value) allItems.push({ item, symbol: NEWS_SYMBOLS[i] });
       }
-    }
+    });
 
     const fulfilledCount = results.filter((r) => r.status === "fulfilled").length;
 
@@ -175,13 +175,13 @@ export async function GET() {
         return true;
       })
       .slice(0, 6)
-      .map(({ item }, index) => ({
+      .map(({ item, symbol }, index) => ({
         id: item.id ?? String(index + 1),
         title: item.title ?? "Sin título",
         summary: buildSummary(item.body),
         source: "Twelve Data",
         date: formatPublishedDate(item.datetime) ?? new Date().toLocaleDateString("es-ES", { dateStyle: "medium" }),
-        commodityTag: inferCommodityTag(item.title ?? ""),
+        commodityTag: inferCommodityTag(`${item.title ?? ""} ${symbol}`),
       }));
 
     return NextResponse.json(news);

@@ -7,6 +7,29 @@ interface NewsCardProps {
   news: NewsItem;
 }
 
+// Formatea la fecha de la noticia de forma segura:
+// - Si llega en formato ISO (p. ej. "2026-09-25" o "2026-05-28T13:45:00Z"),
+//   se parsea con new Date() y se muestra en es-ES. Esto evita el bug de
+//   Safari/NaN al parsear "2025-03-14" sin componente de tiempo ni zona.
+// - Si ya viene como texto legible (fallback mock o API), se muestra tal cual.
+function formatDisplayDate(raw?: string): string {
+  if (!raw) return '';
+  const isoLike = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(raw);
+  if (isoLike) {
+    // Normaliza "YYYY-MM-DD HH:mm:ss" (sin zona) a ISO con 'T' para máxima compatibilidad
+    const normalized = raw.includes(' ') && !raw.endsWith('Z') ? `${raw.replace(' ', 'T')}Z` : raw;
+    const parsed = new Date(normalized);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString('es-ES', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+  }
+  return raw;
+}
+
 export default function NewsCard({ news }: NewsCardProps) {
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
