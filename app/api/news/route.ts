@@ -4,9 +4,12 @@ import { NextResponse } from "next/server";
 // una vez cada 900 s, lo que protege el límite diario de Twelve Data.
 export const revalidate = 900;
 
-// Símbolos de referencia del sector de commodities usados para consultar
-// noticias/press releases en Twelve Data (endpoint: /press_releases).
-const NEWS_SYMBOLS = ["GLD", "USO", "XLE", "FCX"];
+// Símbolos usados para consultar noticias/press releases en Twelve Data
+// (endpoint: /press_releases). Nota verificada empíricamente con la API real:
+// los ETFs de materias primas (GLD, USO, XLE) devuelven SIEMPRE una lista
+// vacía en este endpoint, por lo que usamos acciones del sector de
+// commodities/minería/energía + grandes valores con prensa financiera fresca.
+const NEWS_SYMBOLS = ["V", "JPM", "BHP", "FCX"];
 
 interface TDPressRelease {
   id?: string;
@@ -132,25 +135,26 @@ export async function GET() {
       );
     }
 
-    // Consultamos varios símbolos del sector y combinamos los resultados.
+    // Consultamos los símbolos SECUENCIALMENTE (no en paralelo): el plan
+    // gratuito de Twelve Data limita a 8 créditos por MINUTO, y cada petición
+    // consume 1 crédito. En paralelo + revalidaciones cercanas se supera ese
+    // límite y todos los símbolos devuelven 429. Con la caché de 900 s de la
+    // ruta, este barrido de ~4 peticiones apenas consume cuota diaria.
     // Se toleran fallos parciales: solo caemos a mock si ninguno responde.
-    const results = await Promise.allSettled(
-      NEWS_SYMBOLS.map((symbol) => fetchPressReleases(apiKey, symbol))
-    );
-
     const allItems: { item: TDPressRelease; symbol: string }[] = [];
-    results.forEach((r, i) => {
-      if (r.status === "fulfilled") {
-        for (const item of r.value) allItems.push({ item, symbol: NEWS_SYMBOLS[i] });
+    const errors: string[] = [];
+
+    for (const symbol of NEWS_SYMBOLS) {
+      try {
+        const items = await fetchPressReleases(apiKey, symbol);
+        for (const item of items) allItems.push({ item, symbol });
+      } catch (err) {
+        errors.push(`${symbol}: ${String(err)}`);
       }
-    });
+    }
 
-    const fulfilledCount = results.filter((r) => r.status === "fulfilled").length;
-
-    if (fulfilledCount === 0) {
-      const reason =
-        results[0]?.status === "rejected" ? String(results[0].reason) : "sin respuestas";
-      return getMockFallback(`Todas las peticiones a Twelve Data fallaron: ${reason}`);
+    if (allItems.length === 0 && errors.length === NEWS_SYMBOLS.length) {
+      return getMockFallback(`Todas las peticiones a Twelve Data fallaron (${errors[0]})`);
     }
 
     if (allItems.length === 0) {

@@ -1,3 +1,2 @@
-{"timestamp":"00:00:01.253","source":"Server","level":"LOG","message":""}
-{"timestamp":"00:00:17.487","source":"Server","level":"LOG","message":"○ Compiling / ..."}
-{"timestamp":"00:00:21.292","source":"Server","level":"WARN","message":"[api/news] Fallback a mock data (Rate limit de Alpha Vantage: Thank you for using Alpha Vantage! Please consider spreading out your free API requests more sparingly (1 request per second). You may subscribe to any of the premium plans at https://www.alphavantage.co/premium/ to lift the free key rate limit (25 requests per day), raise the per-second burst limit, and instantly unlock all premium endpoints)"}
+{"timestamp":"00:00:01.491","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:19.378","source":"Server","level":"WARN","message":"[api/news] Fallback a mock data (Todas las peticiones a Twelve Data fallaron: Error: Twelve Data respondió con estado 429)"}
