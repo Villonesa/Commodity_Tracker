@@ -1,2 +1,6 @@
-# Next.js build artifacts
+# Dependencies
+node_modules/
+
+# Next.js build artifacts and cache
 .next/
+tsconfig.tsbuildinfo
