@@ -71,6 +71,11 @@ __turbopack_context__.s([
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
 ;
 const revalidate = 900;
+// En desarrollo NO usamos caché del runtime de fetch: tras un 429, Next.js
+// podía servir la respuesta en caché durante horas aunque la cuota ya se
+// hubiera recuperado. La protección real viene del guardamemoria propio
+// (CACHE_TTL_MS) y del control de concurrencia de más abajo.
+const FETCH_CACHE = ("TURBOPACK compile-time truthy", 1) ? "no-store" : "TURBOPACK unreachable";
 // Símbolos usados para consultar noticias/press releases en Twelve Data
 // (endpoint: /press_releases). Nota verificada empíricamente con la API real:
 // los ETFs de materias primas (GLD, USO, XLE) devuelven SIEMPRE una lista
@@ -139,10 +144,8 @@ async function getMockFallback(reason) {
 }
 async function fetchPressReleases(apiKey, symbol) {
     const url = `https://api.twelvedata.com/press_releases?symbol=${encodeURIComponent(symbol)}&outputsize=6&apikey=${encodeURIComponent(apiKey)}`;
-    // cache: "no-store" porque la caché de la propia ruta (revalidate=900) ya
-    // limita las llamadas salientes; así evitamos cachés encadenadas obsoletas.
     const res = await fetch(url, {
-        cache: "no-store"
+        cache: FETCH_CACHE
     });
     if (!res.ok) {
         throw new Error(`Twelve Data respondió con estado ${res.status}`);
@@ -154,66 +157,123 @@ async function fetchPressReleases(apiKey, symbol) {
     }
     return Array.isArray(data?.press_releases) ? data.press_releases : [];
 }
+// ── Guardamemoria a nivel de proceso + control de concurrencia ────────────
+// page.tsx usa `dynamic = "force-dynamic"`, así que CADA recarga de la home
+// invoca esta ruta. Con 4 símbolos por barrido y un límite gratuito de 8
+// créditos/minuto, recargar varias veces en un minuto agota la cuota (429).
+// Solución: cacheamos el resultado 15 min en memoria del servidor y
+// serializamos los barridos para que nunca salgan peticiones en paralelo.
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
+let newsCache = null;
+let inFlight = null;
+async function fetchFreshNews() {
+    const apiKey = process.env.TWELVE_DATA_API_KEY;
+    if (!apiKey) {
+        return {
+            body: {
+                error: "Falta TWELVE_DATA_API_KEY en las variables de entorno (.env.local)"
+            },
+            savedAt: Date.now()
+        };
+    }
+    // Consultamos los símbolos SECUENCIALMENTE (no en paralelo): el plan
+    // gratuito de Twelve Data limita a 8 créditos por MINUTO, y cada petición
+    // consume 1 crédito. Se toleran fallos parciales: solo caemos a mock si
+    // ninguno responde.
+    const allItems = [];
+    const errors = [];
+    for (const symbol of NEWS_SYMBOLS){
+        try {
+            const items = await fetchPressReleases(apiKey, symbol);
+            for (const item of items)allItems.push({
+                item,
+                symbol
+            });
+        } catch (err) {
+            errors.push(`${symbol}: ${String(err)}`);
+        }
+    }
+    if (allItems.length === 0 && errors.length === NEWS_SYMBOLS.length) {
+        console.warn(`[api/news] Fallback a mock data (${errors[0]})`);
+        const { mockNews } = await __turbopack_context__.A("[project]/lib/mockData.ts [app-route] (ecmascript, async loader)");
+        return {
+            body: mockNews.map((item)=>({
+                    ...item,
+                    title: `[DATOS SIMULADOS - API CAÍDA] ${item.title}`,
+                    date: formatPublishedDate(item.date) ?? item.date
+                })),
+            savedAt: Date.now()
+        };
+    }
+    if (allItems.length === 0) {
+        console.warn("[api/news] Fallback a mock data (Twelve Data no devolvió noticias)");
+        const { mockNews } = await __turbopack_context__.A("[project]/lib/mockData.ts [app-route] (ecmascript, async loader)");
+        return {
+            body: mockNews.map((item)=>({
+                    ...item,
+                    title: `[DATOS SIMULADOS - API CAÍDA] ${item.title}`,
+                    date: formatPublishedDate(item.date) ?? item.date
+                })),
+            savedAt: Date.now()
+        };
+    }
+    // Ordenar por fecha descendente, deduplicar por id/título y quedarse con 6
+    const sorted = allItems.filter(({ item })=>item?.title).sort((a, b)=>{
+        const ta = a.item.datetime ? new Date(a.item.datetime).getTime() : 0;
+        const tb = b.item.datetime ? new Date(b.item.datetime).getTime() : 0;
+        return tb - ta;
+    });
+    const seen = new Set();
+    const news = sorted.filter(({ item })=>{
+        const key = item.id ?? item.title ?? "";
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).slice(0, 6).map(({ item, symbol }, index)=>({
+            id: item.id ?? String(index + 1),
+            title: item.title ?? "Sin título",
+            summary: buildSummary(item.body),
+            source: "Twelve Data",
+            date: formatPublishedDate(item.datetime) ?? new Date().toLocaleDateString("es-ES", {
+                dateStyle: "medium"
+            }),
+            commodityTag: inferCommodityTag(`${item.title ?? ""} ${symbol}`)
+        }));
+    return {
+        body: news,
+        savedAt: Date.now()
+    };
+}
 async function GET() {
     try {
-        const apiKey = process.env.TWELVE_DATA_API_KEY;
-        if (!apiKey) {
-            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-                error: "Falta TWELVE_DATA_API_KEY en las variables de entorno (.env.local)"
-            }, {
-                status: 500
+        // 1) Caché fresca en memoria → se sirve sin tocar la API
+        if (newsCache && Date.now() - newsCache.savedAt < CACHE_TTL_MS) {
+            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(newsCache.body);
+        }
+        // 2) Si hay un barrido en curso, lo esperamos (evita peticiones paralelas
+        //    que agotarían los créditos/minuto)
+        if (!inFlight) {
+            inFlight = fetchFreshNews().finally(()=>{
+                inFlight = null;
             });
         }
-        // Consultamos los símbolos SECUENCIALMENTE (no en paralelo): el plan
-        // gratuito de Twelve Data limita a 8 créditos por MINUTO, y cada petición
-        // consume 1 crédito. En paralelo + revalidaciones cercanas se supera ese
-        // límite y todos los símbolos devuelven 429. Con la caché de 900 s de la
-        // ruta, este barrido de ~4 peticiones apenas consume cuota diaria.
-        // Se toleran fallos parciales: solo caemos a mock si ninguno responde.
-        const allItems = [];
-        const errors = [];
-        for (const symbol of NEWS_SYMBOLS){
-            try {
-                const items = await fetchPressReleases(apiKey, symbol);
-                for (const item of items)allItems.push({
-                    item,
-                    symbol
-                });
-            } catch (err) {
-                errors.push(`${symbol}: ${String(err)}`);
-            }
+        const fresh = await inFlight;
+        // Solo cacheamos éxitos reales o mocks de fallback; los errores de config
+        // (falta API key) no se guardan para poder recuperarse al añadirla.
+        const isErrorConfig = fresh.body && !Array.isArray(fresh.body) && "error" in fresh.body;
+        if (!isErrorConfig) {
+            newsCache = fresh;
+        } else {
+            // No cacheamos el error: caducamos rápido para reintentar tras arreglar .env
+            newsCache = {
+                ...fresh,
+                savedAt: Date.now() - CACHE_TTL_MS + 30_000
+            };
         }
-        if (allItems.length === 0 && errors.length === NEWS_SYMBOLS.length) {
-            return getMockFallback(`Todas las peticiones a Twelve Data fallaron (${errors[0]})`);
-        }
-        if (allItems.length === 0) {
-            return getMockFallback("Twelve Data no devolvió noticias en ningún símbolo consultado");
-        }
-        // Ordenar por fecha descendente, deduplicar por id/título y quedarse con 6
-        const sorted = allItems.filter(({ item })=>item?.title).sort((a, b)=>{
-            const ta = a.item.datetime ? new Date(a.item.datetime).getTime() : 0;
-            const tb = b.item.datetime ? new Date(b.item.datetime).getTime() : 0;
-            return tb - ta;
-        });
-        const seen = new Set();
-        const news = sorted.filter(({ item })=>{
-            const key = item.id ?? item.title ?? "";
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        }).slice(0, 6).map(({ item, symbol }, index)=>({
-                id: item.id ?? String(index + 1),
-                title: item.title ?? "Sin título",
-                summary: buildSummary(item.body),
-                source: "Twelve Data",
-                date: formatPublishedDate(item.datetime) ?? new Date().toLocaleDateString("es-ES", {
-                    dateStyle: "medium"
-                }),
-                commodityTag: inferCommodityTag(`${item.title ?? ""} ${symbol}`)
-            }));
-        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(news);
+        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(fresh.body);
     } catch (error) {
         // Cualquier otro fallo (red, parseo, etc.) → fallback simulado y visible
+        console.error(`[api/news] Error inesperado: ${String(error)}`);
         return getMockFallback(`Error inesperado: ${String(error)}`);
     }
 }
