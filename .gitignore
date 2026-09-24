@@ -1,2 +1,5 @@
 # Next.js build artifacts
 .next/
+
+# Logs
+*.log

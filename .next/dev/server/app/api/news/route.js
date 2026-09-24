@@ -1,4 +1,5 @@
 var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/news/route.js")
+R.c("server/chunks/lib_mockData_ts_0x_40qp._.js")
 R.c("server/chunks/node_modules_next_0zh4-vd._.js")
 R.c("server/chunks/[root-of-the-server]__1cpwy2e._.js")
 R.c("server/chunks/_next-internal_server_app_api_news_route_actions_0rlhrbo.js")

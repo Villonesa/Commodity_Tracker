@@ -63,11 +63,7 @@ export default function NewsCard({ news }: NewsCardProps) {
 
       {/* Fecha */}
       <div className="text-xs text-neutral-500 mb-4">
-        {new Date(news.date).toLocaleDateString("es-ES", {
-          year: "numeric",
-          month: "long",
-          day: "numeric"
-        })}
+        {formatDisplayDate(news.date)}
       </div>
 
       {/* Botón de acción principal */}
