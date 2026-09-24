@@ -1,5 +1,2 @@
-# Dependencies
-node_modules/
-
-# Next.js build output and cache
+# Next.js build artifacts
 .next/

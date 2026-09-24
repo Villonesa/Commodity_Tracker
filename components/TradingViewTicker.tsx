@@ -31,12 +31,14 @@ export default function TradingViewTicker() {
     script.async = true;
     script.innerHTML = JSON.stringify({
       symbols: [
-        { proName: "COMEX:GC1!", title: "Oro" },
-        { proName: "COMEX:SI1!", title: "Plata" },
-        { proName: "COMEX:HG1!", title: "Cobre" },
+        { proName: "OANDA:XAUUSD", title: "Oro" },
+        { proName: "OANDA:XAGUSD", title: "Plata" },
+        { proName: "CAPITALCOM:COPPER", title: "Cobre" },
+        { proName: "CAPITALCOM:ALUMINIUM", title: "Aluminio" },
+        { proName: "CAPITALCOM:ZINC", title: "Zinc" },
         { proName: "TVC:UKOIL", title: "Petróleo Brent" },
-        { proName: "NYMEX:NG1!", title: "Gas Natural" },
-        { proName: "CBOT:ZW1!", title: "Trigo" },
+        { proName: "TVC:USOIL", title: "Crudo WTI" },
+        { proName: "CAPITALCOM:NATURALGAS", title: "Gas Natural" },
       ],
       showSymbolLogo: true,
       isTransparent: true,
@@ -55,8 +57,10 @@ export default function TradingViewTicker() {
   }, []);
 
   return (
-    <div className="border-b border-neutral-800 bg-neutral-950 overflow-hidden">
-      <div ref={containerRef} />
+    <div className="border-b border-neutral-800 bg-neutral-950 overflow-hidden relative group">
+      {/* Capa invisible para bloquear clics hacia TradingView */}
+      <div className="absolute inset-0 z-10 cursor-default"></div>
+      <div ref={containerRef} className="tradingview-widget-container" />
     </div>
   );
 }
