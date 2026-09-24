@@ -64,10 +64,16 @@ module.exports = mod;
 
 __turbopack_context__.s([
     "GET",
-    ()=>GET
+    ()=>GET,
+    "dynamic",
+    ()=>dynamic,
+    "revalidate",
+    ()=>revalidate
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
 ;
+const dynamic = "force-dynamic";
+const revalidate = 0;
 // Etiqueta genérica de commodity basada en palabras clave del título
 function inferCommodityTag(title) {
     const t = title.toLowerCase();
@@ -100,6 +106,18 @@ function formatPublishedDate(timePublished) {
         minute: "2-digit"
     });
 }
+// Importamos el mock data para usarlo como fallback visible cuando la API falle
+async function getMockFallback(reason) {
+    console.warn(`[api/news] Fallback a mock data (${reason})`);
+    const { mockNews } = await __turbopack_context__.A("[project]/lib/mockData.ts [app-route] (ecmascript, async loader)");
+    const simulated = mockNews.map((item)=>({
+            ...item,
+            title: `[LÍMITE API - SIMULACIÓN] ${item.title}`
+        }));
+    return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(simulated, {
+        status: 200
+    });
+}
 async function GET() {
     try {
         const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
@@ -111,26 +129,25 @@ async function GET() {
             });
         }
         const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&topics=energy_minerals,metals&sort=LATEST&limit=6&apikey=${apiKey}`;
+        // cache: 'no-store' → tiempo real estricto, sin respuestas cacheadas
         const res = await fetch(url, {
-            next: {
-                revalidate: 900
-            }
-        }); // cache 15 min
+            cache: "no-store"
+        });
         if (!res.ok) {
-            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-                error: `Alpha Vantage respondió con estado ${res.status}`
-            }, {
-                status: 502
-            });
+            // Error HTTP → fallback simulado y visible
+            return getMockFallback(`Alpha Vantage respondió con estado ${res.status}`);
         }
         const data = await res.json();
+        // Alpha Vantage devuelve "Information" o "Note" cuando se excede el límite
+        // del plan gratuito (rate limit), en lugar del array "feed".
+        if (data?.Information || data?.Note) {
+            const message = String(data.Information ?? data.Note);
+            return getMockFallback(`Rate limit de Alpha Vantage: ${message}`);
+        }
         const feed = Array.isArray(data?.feed) ? data.feed : [];
         if (feed.length === 0) {
-            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-                error: "No se recibieron noticias de Alpha Vantage (posible límite de API alcanzado)"
-            }, {
-                status: 502
-            });
+            // Sin noticias (posible límite de API alcanzado) → fallback simulado y visible
+            return getMockFallback("Alpha Vantage no devolvió noticias en el feed");
         }
         const news = feed.slice(0, 6).map((item, index)=>({
                 id: String(index + 1),
@@ -142,12 +159,8 @@ async function GET() {
             }));
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(news);
     } catch (error) {
-        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-            error: "Error al consultar Alpha Vantage",
-            details: String(error)
-        }, {
-            status: 500
-        });
+        // Cualquier otro fallo (red, parseo, etc.) → fallback simulado y visible
+        return getMockFallback(`Error inesperado: ${String(error)}`);
     }
 }
 }),
