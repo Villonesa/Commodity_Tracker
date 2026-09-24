@@ -6,13 +6,8 @@
 - Local:         http://localhost:3000
 - Network:       http://21.0.3.103:3000
 - Environments: .env.local
-✓ Ready in 555ms
-✓ Running next.config.ts took 43ms
+✓ Ready in 525ms
+✓ Running next.config.ts took 77ms
 
- GET /api/news 200 in 3.0s (next.js: 109ms, application-code: 2.9s)
- GET / 200 in 3.6s (next.js: 295ms, application-code: 3.3s)
- GET /api/news 200 in 7ms (next.js: 3ms, application-code: 5ms)
- GET / 200 in 95ms (next.js: 9ms, application-code: 85ms)
- GET /api/news 200 in 8ms (next.js: 3ms, application-code: 5ms)
- GET /api/news 200 in 7ms (next.js: 3ms, application-code: 4ms)
- GET /api/news 200 in 7ms (next.js: 3ms, application-code: 4ms)
+[api/news] Fallback a mock data (V: Error: Twelve Data respondió con estado 401)
+ GET /api/news 200 in 1561ms (next.js: 216ms, application-code: 1345ms)

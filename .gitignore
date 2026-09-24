@@ -3,8 +3,3 @@
 
 # Logs
 *.log
-
-# Entorno local (NUNCA subir claves al repo)
-.env
-.env.local
-.env*.local

@@ -1,1 +1,2 @@
-{"timestamp":"00:00:01.652","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:01.587","source":"Server","level":"LOG","message":""}
+{"timestamp":"00:00:09.168","source":"Server","level":"WARN","message":"[api/news] Fallback a mock data (V: Error: Twelve Data respondió con estado 401)"}
