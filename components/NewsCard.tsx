@@ -7,12 +7,44 @@ interface NewsCardProps {
   news: NewsItem;
 }
 
+/**
+ * Formatea la fecha ISO 8601 que llega de la API/mock.
+ *
+ * Corrección: antes el componente hacía new Date(news.date) sobre un string
+ * YA formateado en español ("14 mar 2026, 10:30") que le llegaba de la API.
+ * El parser de Date no entiende las abreviaturas de mes en español
+ * (ene, abr, ago, sept, dic…), así que mostraba "Invalid Date".
+ * Ahora la API envía ISO 8601 crudo y el formateo visual ocurre aquí.
+ *
+ * timeZone: 'UTC' fija el huso para que el HTML del servidor y la
+ * hidratación del cliente generen exactamente el mismo texto
+ * (evita hydration mismatch) y para respetar la hora UTC de Alpha Vantage.
+ */
+function formatNewsDate(isoDate: string): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) {
+    // Última red de seguridad: muestra el valor crudo en lugar de "Invalid Date"
+    return isoDate;
+  }
+  return new Intl.DateTimeFormat('es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  }).format(date);
+}
+
 export default function NewsCard({ news }: NewsCardProps) {
   const [isExplaining, setIsExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [explainError, setExplainError] = useState<string | null>(null);
 
   const handleExplain = async () => {
     setIsExplaining(true);
+    setExplainError(null);
 
     try {
       // Llamada real a nuestra API Route que conecta con Gemini
@@ -32,10 +64,18 @@ export default function NewsCard({ news }: NewsCardProps) {
       }
 
       const data = await response.json();
+
+      if (!data?.explanation) {
+        throw new Error('La respuesta no incluyó el campo "explanation"');
+      }
+
       setExplanation(`🤖 ${data.explanation}`);
     } catch (error) {
       console.error('Error al solicitar la explicación:', error);
-      setExplanation('Error al generar la explicación');
+      // Corrección: el error se guarda en un estado propio. Antes se metía
+      // el texto "Error al generar…" en `explanation`, lo que activaba el
+      // bloque "✓ Análisis completado" y ocultaba el botón para siempre.
+      setExplainError('No se pudo generar el análisis. Inténtalo de nuevo.');
     } finally {
       setIsExplaining(false);
     }
@@ -61,16 +101,12 @@ export default function NewsCard({ news }: NewsCardProps) {
         {news.summary}
       </p>
 
-      {/* Fecha */}
+      {/* Fecha (ISO → formato legible, con guardia anti "Invalid Date") */}
       <div className="text-xs text-neutral-500 mb-4">
-        {new Date(news.date).toLocaleDateString("es-ES", {
-          year: "numeric",
-          month: "long",
-          day: "numeric"
-        })}
+        {formatNewsDate(news.date)}
       </div>
 
-      {/* Botón de acción principal */}
+      {/* Botón de acción principal (visible mientras no haya análisis) */}
       {!explanation && (
         <button
           onClick={handleExplain}
@@ -85,10 +121,17 @@ export default function NewsCard({ news }: NewsCardProps) {
               </svg>
               Analizando con IA...
             </>
+          ) : explainError ? (
+            'Reintentar análisis'
           ) : (
             'Entender esta noticia'
           )}
         </button>
+      )}
+
+      {/* Mensaje de error con posibilidad de reintento */}
+      {explainError && !isExplaining && !explanation && (
+        <p className="text-xs text-red-400/80 mt-2 text-center">{explainError}</p>
       )}
 
       {/* Completed State */}
@@ -101,7 +144,7 @@ export default function NewsCard({ news }: NewsCardProps) {
       {/* Explanation Insight */}
       {explanation && (
         <div className="bg-neutral-800/80 border-l-4 border-amber-500 p-4 mt-4 rounded-r-md">
-          <p className="text-sm text-neutral-300 leading-relaxed">
+          <p className="text-sm text-neutral-300 leading-relaxed whitespace-pre-line">
             {explanation}
           </p>
         </div>
