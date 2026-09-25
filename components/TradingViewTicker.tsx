@@ -7,11 +7,32 @@ import { useEffect, useRef } from "react";
  *
  * El script se inyecta dinámicamente con useEffect + useRef para evitar
  * errores de hidratación en React (el HTML del servidor no contiene el
- * contenido generado por TradingView).
+ * contenido generado por TradingView). El widget se conecta por websocket
+ * a TradingView, así que los precios se actualizan en tiempo real.
  *
- * En Strict Mode, useEffect se ejecuta dos veces en desarrollo, por lo que
- * comprobamos si el contenedor ya tiene hijos para no duplicar el widget.
+ * SÍMBOLOS: solo se pueden usar identificadores que existan realmente en
+ * TradingView; si un "proName" no existe, el widget simplemente NO muestra
+ * ese material (ese era el bug de "algunos precios no aparecen"):
+ *
+ *   ✗ OANDA:XCUUSD   → OANDA retiró el cobre (redirige a CAPITALCOM:XCUUSD)
+ *   ✓ COMEX:HG1!     → Copper Futures (CORREGIDO)
+ *   ✗ TVC:ALUMINIUM  → no existe (404 en tradingview.com/symbols/)
+ *   ✓ COMEX:ALI1!    → Aluminum Futures (CORREGIDO)
+ *   ✗ TVC:ZINC       → no existe (404 en tradingview.com/symbols/)
+ *   ✓ LME:ZS1!       → Zinc Futures, referencia global en USD (CORREGIDO)
+ *                      (alternativa: MCX:ZINC1!, cotiza en INR)
  */
+const TICKER_SYMBOLS = [
+  { proName: "OANDA:XAUUSD", title: "Oro" },
+  { proName: "OANDA:XAGUSD", title: "Plata" },
+  { proName: "COMEX:HG1!", title: "Cobre" },
+  { proName: "COMEX:ALI1!", title: "Aluminio" },
+  { proName: "LME:ZS1!", title: "Zinc" },
+  { proName: "TVC:UKOIL", title: "Petróleo Brent" },
+  { proName: "TVC:USOIL", title: "Crudo WTI" },
+  { proName: "OANDA:NATGASUSD", title: "Gas Natural" },
+];
+
 export default function TradingViewTicker() {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -29,17 +50,9 @@ export default function TradingViewTicker() {
       "https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js"
     );
     script.async = true;
+    // El widget lee su configuración del innerHTML del propio <script>
     script.innerHTML = JSON.stringify({
-      symbols: [
-        { proName: "OANDA:XAUUSD", title: "Oro" },
-        { proName: "OANDA:XAGUSD", title: "Plata" },
-        { proName: "OANDA:XCUUSD", title: "Cobre" },
-        { proName: "TVC:ALUMINIUM", title: "Aluminio" },
-        { proName: "TVC:ZINC", title: "Zinc" },
-        { proName: "TVC:UKOIL", title: "Petróleo Brent" },
-        { proName: "TVC:USOIL", title: "Crudo WTI" },
-        { proName: "OANDA:NATGASUSD", title: "Gas Natural" },
-      ],
+      symbols: TICKER_SYMBOLS,
       showSymbolLogo: true,
       isTransparent: true,
       displayMode: "regular",

@@ -20,8 +20,13 @@ export async function POST(request: NextRequest) {
 
     const prompt = `Actúa como un analista experto en mercados de materias primas. Explica la siguiente noticia para un usuario sin conocimientos técnicos. Detalla brevemente por qué es importante y cómo podría afectar a la oferta, la demanda o los precios. Sé directo, usa viñetas si aporta claridad y no superes los 3 párrafos cortos. Noticia: ${title} - ${summary}`;
 
+    // Corrección: "gemini-1.5-flash" está retirado y la API devuelve 404.
+    // El modelo es configurable por variable de entorno para futuros cambios;
+    // el valor por defecto es el modelo Flash actual recomendado por Google.
+    const geminiModel = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: {
